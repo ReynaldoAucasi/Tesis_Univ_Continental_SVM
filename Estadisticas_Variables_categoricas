@@ -1,0 +1,166 @@
+import pandas as pd
+import numpy as np
+from scipy.stats import chi2_contingency
+import matplotlib.pyplot as plt
+import seaborn as sns
+from itertools import combinations
+
+# Función para calcular el coeficiente V de Cramer (medida de asociación normalizada)
+def cramers_v(confusion_matrix):
+    """
+    Calcula el coeficiente V de Cramer a partir de una matriz de contingencia.
+    Este coeficiente varía entre 0 (no hay asociación) y 1 (asociación perfecta).
+    """
+    chi2 = chi2_contingency(confusion_matrix)[0]
+    n = confusion_matrix.sum().sum()
+    phi2 = chi2 / n
+    r, k = confusion_matrix.shape
+    phi2corr = max(0, phi2 - ((k-1)*(r-1))/(n-1))
+    rcorr = r - ((r-1)**2)/(n-1)
+    kcorr = k - ((k-1)**2)/(n-1)
+    return np.sqrt(phi2corr / min((kcorr-1), (rcorr-1)))
+
+# Cargar los datos
+# Asumimos que el archivo tiene los datos categóricos que estamos analizando
+# Cargar los datos
+df = pd.read_csv('dataset/Dataset_modelo.csv', encoding='latin-1',sep=';')
+
+# Mostrar información básica sobre el dataset
+print("Información del dataset:")
+print(f"Número de filas: {df.shape[0]}")
+print(f"Número de columnas: {df.shape[1]}")
+print("\nPrimeras 5 filas:")
+print(df.head())
+
+# Identificar variables categóricas
+# En este caso asumimos que analizamos las variables: TIPO, SERVICIO, CATEGORIA, GRUPO_ASIGNADO
+cat_vars = ['TIPO', 'SERVICIO', 'CATEGORIA', 'GRUPO_ASIGNADO']
+print(f"\nVariables categóricas a analizar: {cat_vars}")
+
+# Crear una matriz de correlación vacía para almacenar los resultados
+n_vars = len(cat_vars)
+cramer_matrix = pd.DataFrame(np.zeros((n_vars, n_vars)), index=cat_vars, columns=cat_vars)
+chi2_matrix = pd.DataFrame(np.zeros((n_vars, n_vars)), index=cat_vars, columns=cat_vars)
+pvalue_matrix = pd.DataFrame(np.ones((n_vars, n_vars)), index=cat_vars, columns=cat_vars)
+dof_matrix = pd.DataFrame(np.zeros((n_vars, n_vars)), index=cat_vars, columns=cat_vars)
+
+# Realizar pruebas chi-cuadrado para cada par de variables
+print("\nRealizando pruebas Chi-cuadrado para cada par de variables:")
+for i, j in combinations(range(n_vars), 2):
+    var1 = cat_vars[i]
+    var2 = cat_vars[j]
+    
+    # Crear tabla de contingencia
+    contingency_table = pd.crosstab(df[var1], df[var2])
+    
+    # Verificar si hay suficientes datos para la prueba
+    if contingency_table.shape[0] > 1 and contingency_table.shape[1] > 1:
+        try:
+            # Realizar prueba chi-cuadrado
+            chi2, p_value, dof, expected = chi2_contingency(contingency_table)
+            
+            # Calcular V de Cramer
+            cramer_v = cramers_v(contingency_table)
+            
+            # Almacenar resultados en las matrices
+            cramer_matrix.loc[var1, var2] = cramer_v
+            cramer_matrix.loc[var2, var1] = cramer_v  # simétrica
+            
+            chi2_matrix.loc[var1, var2] = chi2
+            chi2_matrix.loc[var2, var1] = chi2  # simétrica
+            
+            pvalue_matrix.loc[var1, var2] = p_value
+            pvalue_matrix.loc[var2, var1] = p_value  # simétrica
+            
+            dof_matrix.loc[var1, var2] = dof
+            dof_matrix.loc[var2, var1] = dof  # simétrica
+            
+            # Mostrar resultados
+            print(f"\nAnálisis entre {var1} y {var2}:")
+            print(f"Tabla de contingencia:\n{contingency_table}")
+            print(f"Chi-cuadrado: {chi2:.4f}")
+            print(f"Valor p: {p_value:.4f}")
+            print(f"Grados de libertad: {dof}")
+            print(f"V de Cramer: {cramer_v:.4f}")
+            
+            if p_value < 0.05:
+                print(f"Hay una asociación estadísticamente significativa entre {var1} y {var2}")
+                # Análisis de residuos estandarizados para identificar celdas que contribuyen más a la asociación
+                observed = contingency_table.values
+                expected = expected
+                
+                # Calcular residuos estandarizados
+                residuals = (observed - expected) / np.sqrt(expected)
+                residuals_df = pd.DataFrame(residuals, index=contingency_table.index, columns=contingency_table.columns)
+                
+                print("\nResiduos estandarizados (valores > 2 o < -2 indican asociaciones significativas):")
+                print(residuals_df)
+                
+                # Identificar celdas con mayor contribución
+                high_residuals = residuals_df.unstack().abs().sort_values(ascending=False)
+                print("\nCombinaciones con mayor contribución a la asociación:")
+                print(high_residuals.head(5))
+            else:
+                print(f"No hay evidencia suficiente para afirmar una asociación entre {var1} y {var2}")
+                
+        except Exception as e:
+            print(f"Error al calcular Chi-cuadrado entre {var1} y {var2}: {e}")
+    else:
+        print(f"\nNo hay suficientes categorías diferentes entre {var1} y {var2} para realizar la prueba Chi-cuadrado")
+
+# Visualización de la matriz V de Cramer
+plt.figure(figsize=(10, 8))
+sns.heatmap(cramer_matrix, annot=True, cmap="YlGnBu", vmin=0, vmax=1, fmt=".3f")
+plt.title('Coeficiente V de Cramer - Fuerza de asociación entre variables categóricas')
+plt.tight_layout()
+plt.savefig('cramer_v_matrix.png')
+print("\nMatriz de V de Cramer guardada como 'cramer_v_matrix.png'")
+
+# Visualización de la matriz de valores p
+plt.figure(figsize=(10, 8))
+mask = pvalue_matrix >= 0.05
+sns.heatmap(pvalue_matrix, annot=True, cmap="YlOrRd_r", vmin=0, vmax=0.1, fmt=".3f", mask=mask)
+plt.title('Matriz de valores p - Significancia estadística (solo se muestran p < 0.05)')
+plt.tight_layout()
+plt.savefig('pvalue_matrix.png')
+print("Matriz de valores p guardada como 'pvalue_matrix.png'")
+
+# Guardar resultados en archivos CSV
+cramer_matrix.to_csv('cramer_v_matrix.csv')
+chi2_matrix.to_csv('chi2_matrix.csv')
+pvalue_matrix.to_csv('pvalue_matrix.csv')
+dof_matrix.to_csv('dof_matrix.csv')
+print("\nResultados guardados en archivos CSV")
+
+# Resumen de las asociaciones significativas
+print("\nResumen de asociaciones significativas (p < 0.05):")
+significant_pairs = []
+for i, j in combinations(range(n_vars), 2):
+    var1 = cat_vars[i]
+    var2 = cat_vars[j]
+    p_value = pvalue_matrix.loc[var1, var2]
+    cramer = cramer_matrix.loc[var1, var2]
+    
+    if p_value < 0.05:
+        strength = "débil" if cramer < 0.3 else "moderada" if cramer < 0.5 else "fuerte"
+        significant_pairs.append((var1, var2, p_value, cramer, strength))
+
+if significant_pairs:
+    for var1, var2, p_value, cramer, strength in sorted(significant_pairs, key=lambda x: x[3], reverse=True):
+        print(f"- {var1} y {var2}: V de Cramer = {cramer:.4f} (asociación {strength}, p-valor = {p_value:.4f})")
+else:
+    print("No se encontraron asociaciones estadísticamente significativas entre las variables analizadas.")
+
+# Análisis adicional: visualización de tablas de contingencia para pares significativos
+print("\nCreando visualizaciones para pares de variables con asociación significativa...")
+for var1, var2, p_value, cramer, strength in significant_pairs:
+    # Crear tabla de contingencia
+    contingency_table = pd.crosstab(df[var1], df[var2], normalize='all')
+    
+    # Visualizar como mapa de calor
+    plt.figure(figsize=(12, 10))
+    sns.heatmap(contingency_table, annot=True, cmap="YlGnBu", fmt=".3f", cbar=True)
+    plt.title(f'Tabla de contingencia normalizada: {var1} vs {var2}\nV de Cramer: {cramer:.4f} (asociación {strength})')
+    plt.tight_layout()
+    plt.savefig(f'contingencia_{var1}_{var2}_norm.png')
+    print(f"Visualización guardada: contingencia_{var1}_{var2}_norm.png")
