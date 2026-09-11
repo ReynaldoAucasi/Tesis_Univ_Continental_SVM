@@ -1,0 +1,528 @@
+# ============================================================
+# EXPERIMENTO COMPLEMENTARIO:
+# EMBEDDINGS PREENTRENADOS + SVM
+# Comparación controlada contra TF-IDF + SVM
+# ============================================================
+
+# ------------------------------------------------------------
+# 1. INSTALACIÓN DE LA LIBRERÍA
+# ------------------------------------------------------------
+
+#pip install -q sentence-transformers
+
+# ------------------------------------------------------------
+# 2. IMPORTACIÓN DE LIBRERÍAS
+# ------------------------------------------------------------
+
+import pandas as pd
+import numpy as np
+
+from sentence_transformers import SentenceTransformer
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.svm import SVC
+
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    classification_report,
+    confusion_matrix,
+    ConfusionMatrixDisplay
+)
+
+import matplotlib.pyplot as plt
+
+
+# ------------------------------------------------------------
+# 3. CARGA DEL MISMO DATASET UTILIZADO EN LA TESIS
+# ------------------------------------------------------------
+
+RUTA_DATASET = "dataset/Dataset_modelo.csv"
+# Leer y procesar los datos df = pd.read_csv(RUTA_DATASET)
+df = pd.read_csv('dataset/Dataset_modelo.csv', encoding='latin-1',sep=';')
+
+print("Dimensiones del dataset:", df.shape)
+
+print("\nColumnas:")
+print(df.columns.tolist())
+
+print("\nDistribución de clases:")
+print(df["GRUPO_ASIGNADO"].value_counts())
+
+
+# ------------------------------------------------------------
+# 4. PREPARACIÓN DE VARIABLES
+# ------------------------------------------------------------
+
+X = df["DESCRIPCION"].fillna("").astype(str)
+
+y = df["GRUPO_ASIGNADO"].astype(str)
+
+
+# ------------------------------------------------------------
+# 5. PARTICIÓN EXACTAMENTE IGUAL A LA UTILIZADA
+#    EN EL MODELO ORIGINAL
+# ------------------------------------------------------------
+
+# IMPORTANTE:
+# Se mantiene:
+# test_size = 0.20
+# random_state = 42
+# SIN stratify
+#
+# Esto permite reproducir la misma partición utilizada
+# en el notebook original.
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=0.20,
+    random_state=42
+)
+
+
+# ------------------------------------------------------------
+# 6. VERIFICACIÓN DEL TAMAÑO DE LOS CONJUNTOS
+# ------------------------------------------------------------
+
+print("\n==========================================")
+print("PARTICIÓN DE DATOS")
+print("==========================================")
+
+print("Total de registros :", len(df))
+print("Entrenamiento      :", len(X_train))
+print("Prueba             :", len(X_test))
+
+print("\nDistribución entrenamiento:")
+print(y_train.value_counts())
+
+print("\nDistribución prueba:")
+print(y_test.value_counts())
+
+
+# Verificación esperada
+if len(X_test) == 2101:
+    print("\n✓ El conjunto de prueba contiene 2101 tickets.")
+else:
+    print(
+        f"\n⚠️ Advertencia: el conjunto de prueba contiene "
+        f"{len(X_test)} tickets y no 2101."
+    )
+
+
+# ------------------------------------------------------------
+# 7. CARGAR MODELO DE EMBEDDINGS PREENTRENADO
+# ------------------------------------------------------------
+
+print("\n==========================================")
+print("CARGANDO MODELO DE EMBEDDINGS")
+print("==========================================")
+
+modelo_embedding = SentenceTransformer(
+    "paraphrase-multilingual-MiniLM-L12-v2"
+)
+
+print("✓ Modelo de embeddings cargado.")
+
+
+# ------------------------------------------------------------
+# 8. GENERAR EMBEDDINGS
+# ------------------------------------------------------------
+
+print("\nGenerando embeddings del conjunto de entrenamiento...")
+
+X_train_embedding = modelo_embedding.encode(
+    X_train.tolist(),
+    normalize_embeddings=True,
+    show_progress_bar=True
+)
+
+print("\nGenerando embeddings del conjunto de prueba...")
+
+X_test_embedding = modelo_embedding.encode(
+    X_test.tolist(),
+    normalize_embeddings=True,
+    show_progress_bar=True
+)
+
+
+# ------------------------------------------------------------
+# 9. VERIFICAR DIMENSIONALIDAD
+# ------------------------------------------------------------
+
+print("\n==========================================")
+print("DIMENSIONALIDAD DE LOS EMBEDDINGS")
+print("==========================================")
+
+print(
+    "Dimensión X_train:",
+    X_train_embedding.shape
+)
+
+print(
+    "Dimensión X_test :",
+    X_test_embedding.shape
+)
+
+
+# ------------------------------------------------------------
+# 10. CODIFICACIÓN DE LAS CLASES
+# ------------------------------------------------------------
+
+label_encoder = LabelEncoder()
+
+y_train_encoded = label_encoder.fit_transform(y_train)
+
+y_test_encoded = label_encoder.transform(y_test)
+
+print("\nClases:")
+print(label_encoder.classes_)
+
+
+# ------------------------------------------------------------
+# 11. SVM CON LOS MISMOS PARÁMETROS DEL MODELO ORIGINAL
+# ------------------------------------------------------------
+
+print("\n==========================================")
+print("ENTRENAMIENTO DEL SVM")
+print("==========================================")
+
+svm_embedding = SVC(
+    kernel="linear",
+    C=1.0,
+    probability=True
+)
+
+svm_embedding.fit(
+    X_train_embedding,
+    y_train_encoded
+)
+
+print("✓ SVM entrenado correctamente.")
+
+
+# ------------------------------------------------------------
+# 12. PREDICCIÓN
+# ------------------------------------------------------------
+
+y_pred_embedding = svm_embedding.predict(
+    X_test_embedding
+)
+
+
+# ------------------------------------------------------------
+# 13. CÁLCULO DE MÉTRICAS
+# ------------------------------------------------------------
+
+accuracy_embedding = accuracy_score(
+    y_test_encoded,
+    y_pred_embedding
+)
+
+precision_macro_embedding = precision_score(
+    y_test_encoded,
+    y_pred_embedding,
+    average="macro",
+    zero_division=0
+)
+
+recall_macro_embedding = recall_score(
+    y_test_encoded,
+    y_pred_embedding,
+    average="macro",
+    zero_division=0
+)
+
+f1_macro_embedding = f1_score(
+    y_test_encoded,
+    y_pred_embedding,
+    average="macro",
+    zero_division=0
+)
+
+f1_weighted_embedding = f1_score(
+    y_test_encoded,
+    y_pred_embedding,
+    average="weighted",
+    zero_division=0
+)
+
+
+# ------------------------------------------------------------
+# 14. MOSTRAR RESULTADOS
+# ------------------------------------------------------------
+
+print("\n==========================================")
+print("RESULTADOS: EMBEDDINGS + SVM")
+print("==========================================")
+
+print(f"Accuracy       : {accuracy_embedding:.4f}")
+print(f"Precision Macro: {precision_macro_embedding:.4f}")
+print(f"Recall Macro   : {recall_macro_embedding:.4f}")
+print(f"F1 Macro       : {f1_macro_embedding:.4f}")
+print(f"F1 Weighted    : {f1_weighted_embedding:.4f}")
+
+
+# ------------------------------------------------------------
+# 15. REPORTE DE CLASIFICACIÓN
+# ------------------------------------------------------------
+
+print("\n==========================================")
+print("CLASSIFICATION REPORT")
+print("==========================================")
+
+print(
+    classification_report(
+        y_test_encoded,
+        y_pred_embedding,
+        target_names=label_encoder.classes_,
+        digits=4,
+        zero_division=0
+    )
+)
+
+
+# ------------------------------------------------------------
+# 16. MATRIZ DE CONFUSIÓN
+# ------------------------------------------------------------
+
+cm = confusion_matrix(
+    y_test_encoded,
+    y_pred_embedding
+)
+
+disp = ConfusionMatrixDisplay(
+    confusion_matrix=cm,
+    display_labels=label_encoder.classes_
+)
+
+fig, ax = plt.subplots(figsize=(9, 7))
+
+disp.plot(
+    ax=ax,
+    xticks_rotation=45
+)
+
+ax.set_title(
+    "Matriz de confusión - Embeddings + SVM"
+)
+
+plt.tight_layout()
+plt.show()
+
+
+# ============================================================
+# 17. COMPARACIÓN CON EL RESULTADO ORIGINAL TF-IDF + SVM
+# ============================================================
+
+# Resultados originales obtenidos en la tesis
+# sobre los 2101 tickets del conjunto de prueba.
+
+resultados = pd.DataFrame({
+    "Representación": [
+        "TF-IDF",
+        "Embeddings preentrenados"
+    ],
+
+    "Clasificador": [
+        "SVM lineal",
+        "SVM lineal"
+    ],
+
+    "Accuracy": [
+        0.72,
+        accuracy_embedding
+    ],
+
+    "Precision Macro": [
+        0.76,
+        precision_macro_embedding
+    ],
+
+    "Recall Macro": [
+        0.74,
+        recall_macro_embedding
+    ],
+
+    "F1 Macro": [
+        0.75,
+        f1_macro_embedding
+    ],
+
+    "F1 Weighted": [
+        0.72,
+        f1_weighted_embedding
+    ]
+})
+
+
+print("\n==========================================")
+print("COMPARACIÓN TF-IDF VS EMBEDDINGS")
+print("==========================================")
+
+print(
+    resultados.to_string(index=False)
+)
+
+
+# ------------------------------------------------------------
+# 18. DIFERENCIA DE DESEMPEÑO
+# ------------------------------------------------------------
+
+diferencias = pd.DataFrame({
+    "Métrica": [
+        "Accuracy",
+        "Precision Macro",
+        "Recall Macro",
+        "F1 Macro",
+        "F1 Weighted"
+    ],
+
+    "TF-IDF": [
+        0.72,
+        0.76,
+        0.74,
+        0.75,
+        0.72
+    ],
+
+    "Embeddings": [
+        accuracy_embedding,
+        precision_macro_embedding,
+        recall_macro_embedding,
+        f1_macro_embedding,
+        f1_weighted_embedding
+    ]
+})
+
+diferencias["Diferencia"] = (
+    diferencias["Embeddings"] -
+    diferencias["TF-IDF"]
+)
+
+
+print("\n==========================================")
+print("DIFERENCIA DE DESEMPEÑO")
+print("==========================================")
+
+print(
+    diferencias.to_string(index=False)
+)
+
+
+# ============================================================
+# 19. IDENTIFICAR SI HAY MEJORA
+# ============================================================
+
+print("\n==========================================")
+print("INTERPRETACIÓN DEL RESULTADO")
+print("==========================================")
+
+if f1_weighted_embedding > 0.72:
+    print(
+        "Los embeddings preentrenados presentan un "
+        "F1 Weighted superior al obtenido con TF-IDF."
+    )
+
+elif f1_weighted_embedding < 0.72:
+    print(
+        "Los embeddings preentrenados presentan un "
+        "F1 Weighted inferior al obtenido con TF-IDF."
+    )
+
+else:
+    print(
+        "Los embeddings preentrenados presentan un "
+        "F1 Weighted igual al obtenido con TF-IDF."
+    )
+
+
+# ============================================================
+# 20. PREDICCIÓN DE UN NUEVO TICKET
+# ============================================================
+
+def predecir_ticket_embedding(descripcion):
+
+    # Convertir la descripción en embedding
+    embedding = modelo_embedding.encode(
+        [descripcion],
+        normalize_embeddings=True
+    )
+
+    # Predicción
+    prediccion_codificada = svm_embedding.predict(
+        embedding
+    )[0]
+
+    # Convertir código a nombre de grupo
+    grupo_predicho = label_encoder.inverse_transform(
+        [prediccion_codificada]
+    )[0]
+
+    # Obtener probabilidades
+    probabilidades = svm_embedding.predict_proba(
+        embedding
+    )[0]
+
+    # Ordenar probabilidades de mayor a menor
+    resultados_probabilidad = sorted(
+        zip(
+            label_encoder.classes_,
+            probabilidades
+        ),
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    return grupo_predicho, resultados_probabilidad
+
+
+# ------------------------------------------------------------
+# EJEMPLO
+# ------------------------------------------------------------
+
+ticket_nuevo = (
+    "Colaborador presenta error al ingresar "
+    "a la VPN institucional"
+)
+
+grupo, probabilidades = predecir_ticket_embedding(
+    ticket_nuevo
+)
+
+print("\n==========================================")
+print("PREDICCIÓN DE NUEVO TICKET")
+print("==========================================")
+
+print("Descripción:")
+print(ticket_nuevo)
+
+print("\nGrupo predicho:")
+print(grupo)
+
+print("\nProbabilidades:")
+
+for clase, probabilidad in probabilidades:
+    print(
+        f"{clase}: {probabilidad:.4f}"
+    )
+
+
+# ============================================================
+# 21. GUARDAR RESULTADOS
+# ============================================================
+
+resultados.to_csv(
+    "comparacion_TFIDF_vs_embeddings.csv",
+    index=False
+)
+
+diferencias.to_csv(
+    "diferencias_TFIDF_vs_embeddings.csv",
+    index=False
+)
+
+print("\n✓ Resultados guardados.")
