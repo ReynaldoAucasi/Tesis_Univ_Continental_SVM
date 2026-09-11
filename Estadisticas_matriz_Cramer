@@ -1,0 +1,61 @@
+import pandas as pd
+import numpy as np
+from scipy.stats import chi2_contingency
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Cargar los datos
+df = pd.read_csv('dataset/Dataset_modelo.csv', encoding='latin-1',sep=';')
+
+
+# Mostramos las primeras filas para verificar
+print("Primeras filas del dataset:")
+print(df.head())
+
+# Información sobre las variables
+print("\nInformación de las variables categóricas:")
+for col in ['TIPO', 'SERVICIO', 'CATEGORIA', 'GRUPO_ASIGNADO']:
+    print(f"\n{col} - Valores únicos: {df[col].nunique()}")
+    print(df[col].value_counts())
+
+# Definir las variables categóricas
+variables = ['TIPO', 'SERVICIO', 'CATEGORIA', 'GRUPO_ASIGNADO']
+# Crear todas las combinaciones posibles de tablas de contingencia entre pares de variables
+for i in range(len(variables)):
+    for j in range(i+1, len(variables)):
+        var1 = variables[i]
+        var2 = variables[j]
+        
+        print(f"\n--- Tabla de contingencia entre {var1} y {var2} ---")
+        
+        # Crear la tabla de contingencia
+        tabla_cont = pd.crosstab(
+            index=df[var1], 
+            columns=df[var2],
+            margins=True,  # Agrega totales en filas y columnas
+            margins_name="Total"
+        )
+        
+        print(tabla_cont)
+        
+        # Prueba chi-cuadrado para ver si hay asociación entre las variables
+        # Solo si hay suficientes datos para la prueba (más de una categoría en cada variable)
+        tabla_sin_total = tabla_cont.iloc[:-1, :-1]
+        
+        if tabla_sin_total.shape[0] > 1 and tabla_sin_total.shape[1] > 1:
+            try:
+                chi2, pvalue, dof, expected = chi2_contingency(tabla_sin_total)
+                
+                print(f"Estadístico Chi-cuadrado: {chi2:.4f}")
+                print(f"Valor p: {pvalue:.4f}")
+                print(f"Grados de libertad: {dof}")
+                
+                if pvalue < 0.05:
+                    print("Hay una asociación estadísticamente significativa entre las variables")
+                else:
+                    print("No hay evidencia suficiente para afirmar una asociación entre las variables")
+            except Exception as e:
+                print(f"No se pudo realizar la prueba chi-cuadrado: {e}")
+        else:
+            print("No hay suficientes categorías diferentes para realizar una prueba chi-cuadrado")
+
