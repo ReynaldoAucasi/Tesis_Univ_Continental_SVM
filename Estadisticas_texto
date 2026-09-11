@@ -1,0 +1,334 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import re
+from collections import Counter
+import nltk
+from nltk.tokenize import word_tokenize, sent_tokenize
+from nltk.corpus import stopwords
+import string
+import math
+from wordcloud import WordCloud
+from sklearn.feature_extraction.text import CountVectorizer
+import unicodedata  # Importación para manejo de tildes
+# Descargar recursos necesarios de NLTK
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
+    
+try:
+    nltk.data.find('corpora/stopwords')
+except LookupError:
+    nltk.download('stopwords')
+
+# Función para limpiar y preprocesar texto
+def limpiar_texto(texto):
+    # 1.Convertir a minúsculas
+    texto = texto.lower()
+    # Eliminar tildes (normalizar a forma NFKD y eliminar marcas diacríticas)
+    texto = ''.join(c for c in unicodedata.normalize('NFKD', texto) 
+                if not unicodedata.combining(c))
+    # 2.Eliminar números
+    texto = re.sub(r'\d+', '', texto)
+    # 3.Eliminar puntuación
+    texto = texto.translate(str.maketrans('', '', string.punctuation))
+    # 4.Eliminar espacios múltiples
+    texto = re.sub(r'\s+', ' ', texto).strip()
+    # 5.remover palabras Tokenizar el texto
+    palabras_n = word_tokenize(texto)
+    # Lista de palabras a eliminar
+    palabras_a_eliminar = ['n°','numero','registro','pantalla','used','siguiente','buen','encima','archivo','requiere','unit','adjunta','problema','archivo','unit','presente','limite','dia','mensaje','ingresar','configuración','puede','puedo','muchas gracias''atención','no','buenos', 'dias', 'favor','apoyo','solicito','solicita','buenas','noches','saludos','agradezco','atencion','brevedad','documento','imagen','trabajo','problemas','pc','equipo','tardes','error','usuario','adjunto','gracias','buen dia']
+    # Filtrar palabras (eliminar las de la lista)
+    palabras_filtradas = [palabras_n for palabras_n in palabras_n if palabras_n not in palabras_a_eliminar]
+    # Unir palabras en un solo texto
+    texto = ' '.join(palabras_filtradas)
+    return texto
+
+# Función para calcular estadísticas básicas de texto
+def estadisticas_basicas(texto):
+    # Tokenizar texto en oraciones y palabras
+    oraciones = sent_tokenize(texto)
+    palabras = word_tokenize(texto)
+    
+    # Eliminar signos de puntuación y tokens vacíos
+    palabras = [palabra for palabra in palabras if palabra not in string.punctuation and len(palabra) > 0]
+    
+    # Calcular estadísticas básicas
+    num_caracteres = len(texto)
+    num_palabras = len(palabras)
+    num_oraciones = len(oraciones)
+    
+    # Longitud promedio de palabras
+    longitud_promedio_palabras = sum(len(palabra) for palabra in palabras) / num_palabras if num_palabras > 0 else 0
+    
+    # Longitud promedio de oraciones (en palabras)
+    palabras_por_oracion = [len(word_tokenize(oracion)) for oracion in oraciones]
+    longitud_promedio_oraciones = sum(palabras_por_oracion) / num_oraciones if num_oraciones > 0 else 0
+    
+    # Palabras únicas
+    palabras_unicas = set(palabras)
+    num_palabras_unicas = len(palabras_unicas)
+    
+    return {
+        'num_caracteres': num_caracteres,
+        'num_palabras': num_palabras,
+        'num_oraciones': num_oraciones,
+        'longitud_promedio_palabras': longitud_promedio_palabras,
+        'longitud_promedio_oraciones': longitud_promedio_oraciones,
+        'num_palabras_unicas': num_palabras_unicas,
+        'oraciones': oraciones,
+        'palabras': palabras,
+        'palabras_unicas': palabras_unicas
+    }
+
+# Función para calcular métricas de riqueza léxica
+def calcular_riqueza_lexica(estadisticas):
+    # Type-Token Ratio (TTR) - Proporción entre palabras únicas y total de palabras
+    ttr = estadisticas['num_palabras_unicas'] / estadisticas['num_palabras'] if estadisticas['num_palabras'] > 0 else 0
+    
+    # Root TTR - Raíz cuadrada del número de tipos dividido por el número de tokens
+    root_ttr = estadisticas['num_palabras_unicas'] / math.sqrt(estadisticas['num_palabras']) if estadisticas['num_palabras'] > 0 else 0
+    
+    # Hapax Legomena - Palabras que aparecen solo una vez
+    contador_palabras = Counter(estadisticas['palabras'])
+    hapax = sum(1 for palabra, freq in contador_palabras.items() if freq == 1)
+    porcentaje_hapax = hapax / estadisticas['num_palabras'] * 100 if estadisticas['num_palabras'] > 0 else 0
+    
+    # Índice de Yule (K) - Medida de diversidad léxica basada en la repetición de palabras
+    freq_de_freqs = Counter(contador_palabras.values())
+    m1 = sum(contador_palabras.values())  # Número total de palabras
+    m2 = sum([freq * freq * tokens for tokens, freq in freq_de_freqs.items()])
+    yule_k = 10000 * (m2 - m1) / (m1 * m1) if m1 > 0 else 0
+    
+    return {
+        'ttr': ttr,
+        'root_ttr': root_ttr,
+        'hapax_legomena': hapax,
+        'porcentaje_hapax': porcentaje_hapax,
+        'indice_yule': yule_k
+    }
+
+# Función para analizar la distribución de frecuencias de palabras
+def analizar_distribucion_palabras(palabras, eliminar_stopwords=True):
+    # Opcional: eliminar stopwords
+    if eliminar_stopwords:
+        stop_words = set(stopwords.words('spanish'))
+        palabras_filtradas = [palabra for palabra in palabras if palabra not in stop_words]
+    else:
+        palabras_filtradas = palabras
+    
+    # Conteo de frecuencias
+    contador = Counter(palabras_filtradas)
+    
+    return contador
+
+# Función para visualizar la distribución de frecuencias de palabras
+def visualizar_distribucion_palabras(contador, n=20):
+    palabras_comunes = contador.most_common(n)
+    palabras, frecuencias = zip(*palabras_comunes)
+    
+    plt.figure(figsize=(12, 8))
+    sns.barplot(x=list(frecuencias), y=list(palabras))
+    plt.title(f'Las {n} palabras más frecuentes')
+    plt.xlabel('Frecuencia')
+    plt.ylabel('Palabras')
+    plt.tight_layout()
+    plt.savefig('palabras_frecuentes.png')
+    
+    # Generar nube de palabras
+    wordcloud = WordCloud(width=800, height=400, background_color='white', max_words=100).generate_from_frequencies(contador)
+    plt.figure(figsize=(14, 8))
+    plt.imshow(wordcloud, interpolation='bilinear')
+    plt.axis('off')
+    plt.title('Nube de palabras')
+    plt.tight_layout()
+    plt.savefig('nube_palabras.png')
+
+# Función para calcular N-gramas más comunes
+def calcular_ngramas(textos, n=2, top_n=20):
+    # Inicializar el vectorizador para n-gramas
+    vectorizer = CountVectorizer(ngram_range=(n, n), stop_words=stopwords.words('spanish'))
+    
+    # Ajustar y transformar los textos
+    X = vectorizer.fit_transform(textos)
+    
+    # Obtener los nombres de los n-gramas
+    nombres_ngramas = vectorizer.get_feature_names_out()
+    
+    # Calcular sumas por columna para obtener frecuencias totales
+    frecuencias = np.asarray(X.sum(axis=0)).flatten()
+    
+    # Crear diccionario de n-gramas y frecuencias
+    ngramas_dict = dict(zip(nombres_ngramas, frecuencias))
+    
+    # Ordenar por frecuencia
+    ngramas_ordenados = sorted(ngramas_dict.items(), key=lambda x: x[1], reverse=True)
+    
+    return dict(ngramas_ordenados[:top_n])
+
+# Función para visualizar n-gramas
+def visualizar_ngramas(ngramas_dict, n):
+    ngramas, frecuencias = zip(*ngramas_dict.items())
+    
+    plt.figure(figsize=(12, 8))
+    sns.barplot(x=list(frecuencias), y=list(ngramas))
+    plt.title(f'Los {len(ngramas_dict)} {n}-gramas más frecuentes')
+    plt.xlabel('Frecuencia')
+    plt.ylabel(f'{n}-gramas')
+    plt.tight_layout()
+    plt.savefig(f'{n}gramas_frecuentes.png')
+
+# Función principal que analiza el texto completo
+def analizar_texto(texto):
+    # Limpiar el texto
+    texto_limpio = limpiar_texto(texto)
+    
+    # Calcular estadísticas básicas
+    estadisticas = estadisticas_basicas(texto_limpio)
+    
+    # Calcular métricas de riqueza léxica
+    riqueza_lexica = calcular_riqueza_lexica(estadisticas)
+    
+    # Análisis de distribución de palabras
+    distribucion_palabras = analizar_distribucion_palabras(estadisticas['palabras'])
+    
+    # Generar visualizaciones
+    visualizar_distribucion_palabras(distribucion_palabras)
+    
+    # Calcular y visualizar bigramas y trigramas
+    oraciones_limpias = [limpiar_texto(oracion) for oracion in estadisticas['oraciones']]
+    bigramas = calcular_ngramas(oraciones_limpias, n=2)
+    trigramas = calcular_ngramas(oraciones_limpias, n=3)
+    
+    visualizar_ngramas(bigramas, 2)
+    visualizar_ngramas(trigramas, 3)
+    
+    # Generar informe
+    print("ESTADÍSTICAS BÁSICAS DE TEXTO")
+    print("-" * 50)
+    print(f"Número de caracteres: {estadisticas['num_caracteres']}")
+    print(f"Número de palabras: {estadisticas['num_palabras']}")
+    print(f"Número de oraciones: {estadisticas['num_oraciones']}")
+    print(f"Longitud promedio de palabras: {estadisticas['longitud_promedio_palabras']:.2f} caracteres")
+    print(f"Longitud promedio de oraciones: {estadisticas['longitud_promedio_oraciones']:.2f} palabras")
+    print(f"Número de palabras únicas: {estadisticas['num_palabras_unicas']}")
+    
+    print("\nMÉTRICAS DE RIQUEZA LÉXICA")
+    print("-" * 50)
+    print(f"Type-Token Ratio (TTR): {riqueza_lexica['ttr']:.4f}")
+    print(f"Root TTR: {riqueza_lexica['root_ttr']:.4f}")
+    print(f"Hapax Legomena (palabras que aparecen una sola vez): {riqueza_lexica['hapax_legomena']}")
+    print(f"Porcentaje de Hapax Legomena: {riqueza_lexica['porcentaje_hapax']:.2f}%")
+    print(f"Índice de Yule (K): {riqueza_lexica['indice_yule']:.4f}")
+    
+    print("\nDISTRIBUCIÓN DE PALABRAS")
+    print("-" * 50)
+    print("Las 20 palabras más frecuentes:")
+    for palabra, frecuencia in distribucion_palabras.most_common(20):
+        print(f"{palabra}: {frecuencia}")
+    
+    print("\nBIGRAMAS MÁS FRECUENTES")
+    print("-" * 50)
+    for bigrama, frecuencia in bigramas.items():
+        print(f"{bigrama}: {frecuencia}")
+    
+    print("\nTRIGRAMAS MÁS FRECUENTES")
+    print("-" * 50)
+    for trigrama, frecuencia in trigramas.items():
+        print(f"{trigrama}: {frecuencia}")
+    
+    # Crear DataFrame para guardar resultados
+    resultados_dict = {
+         'Métrica': ['Número de caracteres', 'Número de palabras', 'Número de oraciones', 
+                    'Longitud promedio de palabras', 'Longitud promedio de oraciones', 
+                   'Número de palabras únicas', 'Type-Token Ratio (TTR)', 'Root TTR',
+                    'Hapax Legomena', 'Porcentaje de Hapax Legomena', 'Índice de Yule (K)'],
+        'Valor': [estadisticas['num_caracteres'], estadisticas['num_palabras'], 
+                  estadisticas['num_oraciones'], estadisticas['longitud_promedio_palabras'], 
+                  estadisticas['longitud_promedio_oraciones'], estadisticas['num_palabras_unicas'],
+                riqueza_lexica['ttr'], riqueza_lexica['root_ttr'], riqueza_lexica['hapax_legomena'],
+                  riqueza_lexica['porcentaje_hapax'], riqueza_lexica['indice_yule']]
+     }
+    
+    df_resultados = pd.DataFrame(resultados_dict)
+    df_resultados.to_csv('estadisticas_texto.csv', index=False)
+    
+    #Guardar distribución de palabras
+    pd.DataFrame({
+         'Palabra': [palabra for palabra, _ in distribucion_palabras.most_common()],
+         'Frecuencia': [freq for _, freq in distribucion_palabras.most_common()]
+    }).to_csv('distribucion_palabras.csv', index=False)
+    
+    return {
+        'estadisticas': estadisticas,
+        'riqueza_lexica': riqueza_lexica,
+        'distribucion_palabras': distribucion_palabras,
+        'bigramas': bigramas,
+        'trigramas': trigramas
+    }
+
+# Ejemplo de uso con el contenido de un archivo
+def analizar_desde_archivo(ruta_archivo):
+    try:
+        with open(ruta_archivo, 'r', encoding='utf-8') as file:
+            texto = file.read()
+        return analizar_texto(texto)
+    except Exception as e:
+        print(f"Error al leer el archivo: {e}")
+        return None
+
+# Ejemplo de uso con un DataFrame (asumiendo que tiene una columna de texto)
+def analizar_desde_dataframe(df, columna_texto):
+    # Combinar todos los textos
+    texto_completo = ' '.join(df[columna_texto].dropna().astype(str))
+    return analizar_texto(texto_completo)
+
+# Ejemplo de uso para el campo DESCRIPCION del dataset proporcionado
+if __name__ == "__main__":
+    try:
+        # Leer el dataset
+        df = pd.read_csv('dataset/Dataset_modelo.csv', encoding='latin-1',sep=';')   
+        # Verificar si existe la columna DESCRIPCION
+        if 'DESCRIPCION' in df.columns:
+            print("Analizando texto de la columna DESCRIPCION...")
+            # Analizar el texto de la columna DESCRIPCION
+            resultados = analizar_desde_dataframe(df, 'DESCRIPCION')
+            print("\nAnálisis completado. Se han generado archivos CSV con los resultados y gráficas PNG.")
+        else:
+            print("La columna DESCRIPCION no existe en el dataset.")
+            print("Columnas disponibles:", df.columns.tolist())
+            
+            # Solicitar al usuario que elija una columna para analizar
+            print("\nElija una columna para analizar:")
+            for i, col in enumerate(df.columns):
+                print(f"{i+1}. {col}")
+            
+            try:
+                indice = int(input("Ingrese el número de la columna: ")) - 1
+                if 0 <= indice < len(df.columns):
+                    columna = df.columns[indice]
+                    print(f"Analizando texto de la columna {columna}...")
+                    resultados = analizar_desde_dataframe(df, columna)
+                    print("\nAnálisis completado. Se han generado archivos CSV con los resultados y gráficas PNG.")
+                else:
+                    print("Índice fuera de rango.")
+            except ValueError:
+                print("Entrada no válida.")
+    except Exception as e:
+        print(f"Error al procesar el dataset: {e}")
+        
+        # Ofrecer analizar un texto de ejemplo si hay problemas con el archivo
+        respuesta = input("¿Desea analizar un texto de ejemplo? (s/n): ")
+        if respuesta.lower() == 's':
+            texto_ejemplo = """
+            Este es un texto de ejemplo para mostrar las capacidades del análisis de texto. 
+            Este análisis incluye estadísticas básicas, métricas de riqueza léxica y análisis de distribución de palabras.
+            Las estadísticas nos ayudan a entender la estructura del texto.
+            La riqueza léxica nos da una idea de la diversidad del vocabulario utilizado.
+            La distribución de palabras nos muestra qué términos son más frecuentes en el texto.
+            Este tipo de análisis es útil en lingüística, análisis de contenido y procesamiento del lenguaje natural.
+            """
+            resultados = analizar_texto(texto_ejemplo)
+            print("\nAnálisis completado. Se han generado archivos CSV con los resultados y gráficas PNG.")
